@@ -2,56 +2,44 @@ package main
 
 import (
 	"fmt"
+	"go-lru-script/cache"
 	"log"
 	"time"
-
-	"go-lru-script/cache"
 )
+var tokenCache *cache.Cache[string, bool]
+
+func handleRequest(shopperId string) {
+	fmt.Printf("\n--- Petición recibida para Shopper ID: %s ---\n", shopperId)
+
+	_, tokenExists := tokenCache.Get(shopperId)
+
+	if !tokenExists {
+		fmt.Printf("Token para [%s] no encontrado o expirado. ¡Procesando y añadiendo al caché!\n", shopperId)
+		tokenCache.Set(shopperId, true)
+		fmt.Printf("Token para [%s] añadido al caché.\n", shopperId)
+	} else {
+		fmt.Printf("Token para [%s] ya existe en el caché. Saltando proceso duplicado.\n", shopperId)
+	}
+}
 
 func main() {
-	
-	c, err := cache.New[string, bool](2, 5*time.Second)
+	var err error
+	// Inicializar el caché con un tamaño máximo de 1000 entradas y un TTL de 5 segundos
+	tokenCache, err = cache.New[string, bool](1000, 5*time.Second)
 	if err != nil {
-		log.Fatalf("Error creating cache: %v", err)
+		log.Fatalf("No se pudo crear el caché: %v", err)
 	}
 
-	fmt.Println("Starting LRU Cache Test Script...")
+	handleRequest("ana-123")
+	handleRequest("ana-123")
 
-	
-	fmt.Println("[1 Configuring Cache]")
-	c.Set("user:ana@test.com", true)
-	c.Set("user:carlos@test.com", true)
-	
-
-
-	fmt.Println("\n[Testting LRU Expulsion]")
-	c.Get("user:ana@test.com")
-	fmt.Println("Añadiendo 'user:diana@test.com', debería expulsar a Carlos (el menos usado).")
-	c.Set("user:diana@test.com", true)
-
-	if _, found := c.Get("user:carlos@test.com"); !found {
-		fmt.Println("-> ÉXITO: El token de Carlos fue expulsado por ser LRU.")
-	} else {
-		fmt.Println("-> ERROR: El token de Carlos no fue expulsado.")
-	}
-	fmt.Printf("Elementos en el caché: %d\n", c.Len())
-
-
-
-	fmt.Println("\n[Paso 3: Probando TTL]")
-	fmt.Println("Esperando 6 segundos para que los tokens restantes expiren...")
+	fmt.Println("\n...Esperando 6 segundos para que el TTL invalide el caché...")
 	time.Sleep(6 * time.Second)
 
-	if _, found := c.Get("user:ana@test.com"); !found {
-		fmt.Println("-> ÉXITO: El token de Ana expiró por TTL.")
-	} else {
-		fmt.Println("-> ERROR: El token de Ana no expiró.")
-	}
+	handleRequest("ana-123")
 	
-	if _, found := c.Get("user:diana@test.com"); !found {
-		fmt.Println("-> ÉXITO: El token de Diana expiró por TTL.")
-	} else {
-		fmt.Println("-> ERROR: El token de Diana no expiró.")
+	
+	if _, found := tokenCache.Get("ana-123"); found {
+		fmt.Println("\nConfirmado: El token de Ana está de nuevo en el caché después de la re-validación.")
 	}
-	fmt.Printf("Elementos finales en el caché: %d\n", c.Len())
 }
