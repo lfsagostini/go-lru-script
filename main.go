@@ -11,30 +11,29 @@ import (
 	"time"
 )
 
-
 const (
     numUsers      = 3000
     opsPerUser    = 100
     cacheCapacity = 3000
-    cacheTTL      = 5 * time.Second 
+    cacheTTL      = 5 * time.Second
 )
-
 
 var (
-	tokenCache *cache.Cache[string, bool]
-	wg         sync.WaitGroup 
-	cacheHits   atomic.Int64
-	cacheMisses atomic.Int64
-	setsDone    atomic.Int64
+    tokenCache  *cache.Cache[string, bool]
+    wg          sync.WaitGroup
+    cacheHits   atomic.Int64
+    cacheMisses atomic.Int64
+    setsDone    atomic.Int64
 )
 
+// Prints memory, CPU, and goroutine stats every second
 func monitorSystem() {
     ticker := time.NewTicker(1 * time.Second)
     defer ticker.Stop()
     var m runtime.MemStats
     for range ticker.C {
         runtime.ReadMemStats(&m)
-        fmt.Printf("🖥️ Memoria: %.2f MB | CPUs: %d | Goroutines: %d\n",
+        fmt.Printf("🖥️ Memory: %.2f MB | CPUs: %d | Goroutines: %d\n",
             float64(m.Alloc)/1024/1024,
             runtime.NumCPU(),
             runtime.NumGoroutine(),
@@ -42,6 +41,7 @@ func monitorSystem() {
     }
 }
 
+// Simulates a user making cache requests
 func userWorker(id int) {
     defer wg.Done()
     shopperID := fmt.Sprintf("shopper-%d", id)
@@ -55,69 +55,67 @@ func userWorker(id int) {
             tokenCache.Set(shopperID, true)
             setsDone.Add(1)
         }
-        // Pausa aleatoria entre 10 y 100 ms
+        // Random pause between 10 and 100 ms
         time.Sleep(time.Duration(10+rand.Intn(90)) * time.Millisecond)
     }
 }
 
+// Prints the number of users in cache every second
 func monitorCache() {
     ticker := time.NewTicker(1 * time.Second)
     defer ticker.Stop()
     for range ticker.C {
-        fmt.Printf("⏳ Usuarios en caché: %d\n", tokenCache.Len())
+        fmt.Printf("⏳ Users in cache: %d\n", tokenCache.Len())
     }
 }
 
 func main() {
-	
-	var err error
-	tokenCache, err = cache.New[string, bool](cacheCapacity, cacheTTL)
-	if err != nil {
-		log.Fatalf("No se pudo crear el caché: %v", err)
-	}
-	go monitorCache()
-	go monitorSystem()
+    var err error
+    tokenCache, err = cache.New[string, bool](cacheCapacity, cacheTTL)
+    if err != nil {
+        log.Fatalf("Could not create cache: %v", err)
+    }
+    go monitorCache()
+    go monitorSystem()
 
-	fmt.Println("🚀 Iniciando prueba de estrés concurrente...")
-	fmt.Printf("   - Usuarios concurrentes: %d\n", numUsers)
-	fmt.Printf("   - Capacidad del caché: %d\n", cacheCapacity)
-	fmt.Printf("   - TTL: %v\n", cacheTTL)
-	fmt.Println("-------------------------------------------------")
+    fmt.Println("🚀 Starting concurrent stress test...")
+    fmt.Printf("   - Concurrent users: %d\n", numUsers)
+    fmt.Printf("   - Cache capacity: %d\n", cacheCapacity)
+    fmt.Printf("   - TTL: %v\n", cacheTTL)
+    fmt.Println("-------------------------------------------------")
 
-	startTime := time.Now()
+    startTime := time.Now()
 
+    for i := 0; i < numUsers; i++ {
+        wg.Add(1)
+        go userWorker(i)
+    }
 
-	for i := 0; i < numUsers; i++ {
-		wg.Add(1) 
-		go userWorker(i) 
-	}
+    fmt.Println("... All workers started, waiting for completion ...")
+    wg.Wait()
 
+    duration := time.Since(startTime)
 
-	fmt.Println("... Todos los workers iniciados, esperando que terminen ...")
-	wg.Wait()
+    fmt.Println("\n✅ Test completed!")
+    fmt.Println("-------------------------------------------------")
+    fmt.Printf("Total duration: %v\n", duration)
+    fmt.Println("\nCache stats:")
 
-	duration := time.Since(startTime)
+    totalHits := cacheHits.Load()
+    totalMisses := cacheMisses.Load()
+    totalSets := setsDone.Load()
+    totalOps := totalHits + totalMisses
 
-	fmt.Println("\n✅ ¡Prueba completada!")
-	fmt.Println("-------------------------------------------------")
-	fmt.Printf("Duración total: %v\n", duration)
-	fmt.Println("\nEstadísticas del Caché:")
+    hitRate := float64(totalHits) / float64(totalOps) * 100
 
-	totalHits := cacheHits.Load()
-	totalMisses := cacheMisses.Load()
-	totalSets := setsDone.Load()
-	totalOps := totalHits + totalMisses
+    fmt.Printf("  - Hits:         %d\n", totalHits)
+    fmt.Printf("  - Misses:       %d\n", totalMisses)
+    fmt.Printf("  - Set ops:      %d\n", totalSets)
+    fmt.Printf("  - Hit rate:     %.2f%%\n", hitRate)
+    fmt.Printf("  - Final items:  %d\n", tokenCache.Len())
+    fmt.Println("-------------------------------------------------")
 
-	hitRate := float64(totalHits) / float64(totalOps) * 100
-
-	fmt.Printf("  - Aciertos (Hits):    %d\n", totalHits)
-	fmt.Printf("  - Fallos (Misses):    %d\n", totalMisses)
-	fmt.Printf("  - Operaciones Set:    %d\n", totalSets)
-	fmt.Printf("  - Tasa de Aciertos:   %.2f%%\n", hitRate)
-	fmt.Printf("  - Elementos finales:  %d\n", tokenCache.Len())
-	fmt.Println("-------------------------------------------------")
-
-	if totalMisses != totalSets {
-		fmt.Println("⚠️ Advertencia: El número de misses no coincide con el de sets. Puede indicar un problema.")
-	}
+    if totalMisses != totalSets {
+        fmt.Println("⚠️ Warning: Misses and sets count do not match. Possible issue.")
+    }
 }
