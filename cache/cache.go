@@ -15,7 +15,7 @@ type cacheEntry[V any] struct {
 
 
 type Cache[K comparable, V any] struct {
-	mu  sync.Mutex
+	mu  sync.RWMutex
 	lru *lru.Cache[K, *cacheEntry[V]] 
 	ttl time.Duration
 }
@@ -49,19 +49,18 @@ func (c *Cache[K, V]) Set(key K, value V) {
 
 
 func (c *Cache[K, V]) Get(key K) (V, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	
+	c.mu.RLock()
 	entry, found := c.lru.Get(key)
+	c.mu.RUnlock()
 	if !found {
-		var zero V 
+		var zero V
 		return zero, false
 	}
 
-	
 	if time.Now().After(entry.expiresAt) {
+		c.mu.Lock()
 		c.lru.Remove(key)
+		c.mu.Unlock()
 		var zero V
 		return zero, false
 	}
